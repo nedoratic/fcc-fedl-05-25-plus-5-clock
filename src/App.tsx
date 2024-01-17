@@ -1,108 +1,219 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-function App() {
-	const [breakLength, setBreakLength] = useState(5);
-	const [sessionLength, setSessionLength] = useState(25);
-	const [isSession, setIsSession] = useState(true);
-	const [isActive, setIsActive] = useState(false);
-	const [time, setTime] = useState(sessionLength * 60);
+interface LengthControlProps {
+	addID: string;
+	length: number;
+	lengthID: string;
+	minID: string;
+	onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+	title: string;
+	titleID: string;
+}
 
-	const formatTime = (seconds: number): string => {
-		const minutes = Math.floor(seconds / 60)
-			.toString()
-			.padStart(2, '0');
-		const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
-		return `${minutes}:${remainingSeconds}`;
-	};
+class LengthControl extends React.Component<LengthControlProps> {
+	render() {
+		return (
+			<div className="length-control">
+				<div id={this.props.titleID}>{this.props.title}</div>
+				<button className="btn-level" id={this.props.minID} onClick={this.props.onClick} value="-">
+					-
+				</button>
+				<div className="btn-level" id={this.props.lengthID}>
+					{this.props.length}
+				</div>
+				<button className="btn-level" id={this.props.addID} onClick={this.props.onClick} value="+">
+					+
+				</button>
+			</div>
+		);
+	}
+}
 
-	const handleBreakDecrement = () => {
-		setBreakLength((prevLength) => Math.max(prevLength - 1, 1));
-	};
+interface AppState {
+	brkLength: number;
+	seshLength: number;
+	timerState: 'stopped' | 'running';
+	timerType: 'Session' | 'Break';
+	timer: number;
+	intervalID: NodeJS.Timeout | '';
+	alarmColor: { color: string };
+}
 
-	const handleBreakIncrement = () => {
-		setBreakLength((prevLength) => Math.min(prevLength + 1, 60));
-	};
+class App extends React.Component<{}, AppState> {
+	private audioBeep: HTMLAudioElement | null;
 
-	const handleSessionDecrement = () => {
-		setSessionLength((prevLength) => Math.max(prevLength - 1, 1));
-	};
+	constructor(props: {}) {
+		super(props);
+		this.state = {
+			brkLength: 5,
+			seshLength: 25,
+			timerState: 'stopped',
+			timerType: 'Session',
+			timer: 1500,
+			intervalID: '',
+			alarmColor: { color: 'white' },
+		};
 
-	const handleSessionIncrement = () => {
-		setSessionLength((prevLength) => Math.min(prevLength + 1, 60));
-	};
+		this.setBrkLength = this.setBrkLength.bind(this);
+		this.setSeshLength = this.setSeshLength.bind(this);
+		this.lengthControl = this.lengthControl.bind(this);
+		this.timerControl = this.timerControl.bind(this);
+		this.beginCountDown = this.beginCountDown.bind(this);
+		this.decrementTimer = this.decrementTimer.bind(this);
+		this.phaseControl = this.phaseControl.bind(this);
+		this.warning = this.warning.bind(this);
+		this.buzzer = this.buzzer.bind(this);
+		this.switchTimer = this.switchTimer.bind(this);
+		this.clockify = this.clockify.bind(this);
+		this.reset = this.reset.bind(this);
+		this.audioBeep = null;
+	}
 
-	const handleStartStop = () => {
-		setIsActive(!isActive);
-	};
+	setBrkLength(e: React.MouseEvent<HTMLButtonElement>) {
+		this.lengthControl('brkLength', e.currentTarget.value, this.state.brkLength, 'Session');
+	}
 
-	const handleReset = () => {
-		setIsActive(false);
-		setBreakLength(5);
-		setSessionLength(25);
-		setTime(25 * 60);
-		setIsSession(true);
-	};
+	setSeshLength(e: React.MouseEvent<HTMLButtonElement>) {
+		this.lengthControl('seshLength', e.currentTarget.value, this.state.seshLength, 'Break');
+	}
 
-	useEffect(() => {
-		let interval: NodeJS.Timeout;
+	lengthControl(e: string, t: string, s: number, i: string) {
+		if (this.state.timerState !== 'running') {
+			if (this.state.timerType === i) {
+				if (t === '-' && s !== 1) {
+					this.setState({ [e]: s - 1 });
+				} else if (t === '+' && s !== 60) {
+					this.setState({ [e]: s + 1 });
+				}
+			} else {
+				if (t === '-' && s !== 1) {
+					this.setState({ [e]: s - 1, timer: 60 * s - 60 });
+				} else if (t === '+' && s !== 60) {
+					this.setState({ [e]: s + 1, timer: 60 * s + 60 });
+				}
+			}
+		}
+	}
 
-		if (isActive) {
-			interval = setInterval(() => {
-				setTime((prevTime) => (prevTime > 0 ? prevTime - 1 : 0));
-			}, 1000);
+	timerControl() {
+		if (this.state.timerState === 'stopped') {
+			this.beginCountDown();
+			this.setState({ timerState: 'running' });
 		} else {
-			clearInterval(interval);
+			this.setState({ timerState: 'stopped' });
+			clearInterval(this.state.intervalID as NodeJS.Timeout);
 		}
+	}
 
-		return () => clearInterval(interval);
-	}, [isActive]);
+	beginCountDown() {
+		this.setState({
+			intervalID: setInterval(() => {
+				this.decrementTimer();
+				this.phaseControl();
+			}, 1000),
+		});
+	}
 
-	useEffect(() => {
+	decrementTimer() {
+		this.setState({ timer: this.state.timer - 1 });
+	}
+
+	phaseControl() {
+		const time = this.state.timer;
+		this.warning(time);
+		this.buzzer(time);
+
+		if (time < 0) {
+			clearInterval(this.state.intervalID as NodeJS.Timeout);
+
+			if (this.state.timerType === 'Session') {
+				this.beginCountDown();
+				this.switchTimer(60 * this.state.brkLength, 'Break');
+			} else {
+				this.beginCountDown();
+				this.switchTimer(60 * this.state.seshLength, 'Session');
+			}
+		}
+	}
+
+	warning(time: number) {
+		this.setState({ alarmColor: time < 61 ? { color: '#a50d0d' } : { color: 'white' } });
+	}
+
+	buzzer(time: number) {
 		if (time === 0) {
-			// Handle switch between session and break
-			setIsSession((prevIsSession) => {
-				const newLabel = prevIsSession ? 'Break' : 'Session';
-				return !prevIsSession;
-			});
-
-			// Set the time for the new session or break
-			setTime((prevTime) => (isSession ? breakLength : sessionLength) * 60);
+			this.audioBeep?.play();
 		}
-	}, [time, isSession, breakLength, sessionLength]);
+	}
 
-	return (
-		<div id="root">
-			<div id="break-label">Break Length</div>
-			<button id="break-decrement" onClick={handleBreakDecrement}>
-				Decrement
-			</button>
-			<div id="break-length">{breakLength}</div>
-			<button id="break-increment" onClick={handleBreakIncrement}>
-				Increment
-			</button>
+	switchTimer(newTime: number, newType: 'Session' | 'Break') {
+		this.setState({ timer: newTime, timerType: newType, alarmColor: { color: 'white' } });
 
-			<div id="session-label">Session Length</div>
-			<button id="session-decrement" onClick={handleSessionDecrement}>
-				Decrement
-			</button>
-			<div id="session-length">{sessionLength}</div>
-			<button id="session-increment" onClick={handleSessionIncrement}>
-				Increment
-			</button>
+		if (newType === 'Break') {
+			this.audioBeep?.play();
+		}
+	}
 
-			<div id="timer-label">{isSession ? 'Session' : 'Break'}</div>
-			<div id="time-left">{formatTime(time)}</div>
+	clockify() {
+		if (this.state.timer < 0) return '00:00';
+		const minutes = Math.floor(this.state.timer / 60);
+		let seconds = this.state.timer - 60 * minutes;
+		seconds = seconds < 10 ? '0' + seconds : seconds;
+		const displayMinutes = minutes < 10 ? '0' + minutes : minutes;
+		return displayMinutes + ':' + seconds;
+	}
 
-			<button id="start_stop" onClick={handleStartStop}>
-				Start/Stop
-			</button>
-			<button id="reset" onClick={handleReset}>
-				Reset
-			</button>
-			<audio id="beep" src="path/to/audio.mp3" />
-		</div>
-	);
+	reset() {
+		this.setState({
+			brkLength: 5,
+			seshLength: 25,
+			timerState: 'stopped',
+			timerType: 'Session',
+			timer: 1500,
+			intervalID: '',
+			alarmColor: { color: 'white' },
+		});
+
+		clearInterval(this.state.intervalID as NodeJS.Timeout);
+
+		if (this.audioBeep) {
+			this.audioBeep.pause();
+			this.audioBeep.currentTime = 0;
+		}
+	}
+
+	render() {
+		return (
+			<div className="container">
+				<div className="main-title">25 + 5 Clock</div>
+				<LengthControl addID="break-increment" length={this.state.brkLength} lengthID="break-length" minID="break-decrement" onClick={this.setBrkLength} title="Break Length" titleID="break-label" />
+				<LengthControl addID="session-increment" length={this.state.seshLength} lengthID="session-length" minID="session-decrement" onClick={this.setSeshLength} title="Session Length" titleID="session-label" />
+				<div className="timer" style={this.state.alarmColor}>
+					<div className="timer-wrapper">
+						<div id="timer-label">{this.state.timerType}</div>
+						<div id="time-left">{this.clockify()}</div>
+					</div>
+				</div>
+				<div className="timer-control">
+					<button id="start_stop" onClick={this.timerControl}>
+						{this.state.timerState === 'stopped' ? <span>Start</span> : <span>Stop</span>}
+					</button>
+					<button id="reset" onClick={this.reset}>
+						Reset
+					</button>
+				</div>
+				<audio
+					id="beep"
+					preload="auto"
+					ref={(e) => {
+						this.audioBeep = e;
+					}}
+					src="https://cdn.freecodecamp.org/testable-projects-fcc/audio/BeepSound.wav"
+				/>
+			</div>
+		);
+	}
 }
 
 export default App;
