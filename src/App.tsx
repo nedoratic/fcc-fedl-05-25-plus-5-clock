@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import './App.css';
 
 interface LengthControlProps {
@@ -36,14 +36,14 @@ interface AppState {
 	timerState: 'stopped' | 'running';
 	timerType: 'Session' | 'Break';
 	timer: number;
-	intervalID: NodeJS.Timeout | '';
+	intervalID: NodeJS.Timeout | number | undefined;
 	alarmColor: { color: string };
 }
 
-class App extends React.Component<{}, AppState> {
+class App extends React.Component<unknown, AppState> {
 	private audioBeep: HTMLAudioElement | null;
 
-	constructor(props: {}) {
+	constructor(props: unknown) {
 		super(props);
 		this.state = {
 			brkLength: 5,
@@ -51,7 +51,7 @@ class App extends React.Component<{}, AppState> {
 			timerState: 'stopped',
 			timerType: 'Session',
 			timer: 1500,
-			intervalID: '',
+			intervalID: undefined,
 			alarmColor: { color: 'white' },
 		};
 
@@ -82,15 +82,15 @@ class App extends React.Component<{}, AppState> {
 		if (this.state.timerState !== 'running') {
 			if (this.state.timerType === i) {
 				if (t === '-' && s !== 1) {
-					this.setState({ [e]: s - 1 });
+					this.setState({ [e]: s - 1 } as unknown as Pick<AppState, keyof AppState>);
 				} else if (t === '+' && s !== 60) {
-					this.setState({ [e]: s + 1 });
+					this.setState({ [e]: s + 1 } as unknown as Pick<AppState, keyof AppState>);
 				}
 			} else {
 				if (t === '-' && s !== 1) {
-					this.setState({ [e]: s - 1, timer: 60 * s - 60 });
+					this.setState({ [e]: s - 1, timer: 60 * s - 60 } as unknown as Pick<AppState, keyof AppState>);
 				} else if (t === '+' && s !== 60) {
-					this.setState({ [e]: s + 1, timer: 60 * s + 60 });
+					this.setState({ [e]: s + 1, timer: 60 * s + 60 } as unknown as Pick<AppState, keyof AppState>);
 				}
 			}
 		}
@@ -102,7 +102,7 @@ class App extends React.Component<{}, AppState> {
 			this.setState({ timerState: 'running' });
 		} else {
 			this.setState({ timerState: 'stopped' });
-			clearInterval(this.state.intervalID as NodeJS.Timeout);
+			clearInterval(this.state.intervalID as NodeJS.Timeout | number | undefined);
 		}
 	}
 
@@ -111,7 +111,7 @@ class App extends React.Component<{}, AppState> {
 			intervalID: setInterval(() => {
 				this.decrementTimer();
 				this.phaseControl();
-			}, 1000),
+			}, 1000) as unknown as NodeJS.Timeout,
 		});
 	}
 
@@ -125,7 +125,7 @@ class App extends React.Component<{}, AppState> {
 		this.buzzer(time);
 
 		if (time < 0) {
-			clearInterval(this.state.intervalID as NodeJS.Timeout);
+			clearInterval(this.state.intervalID as NodeJS.Timeout | number | undefined);
 
 			if (this.state.timerType === 'Session') {
 				this.beginCountDown();
@@ -149,7 +149,6 @@ class App extends React.Component<{}, AppState> {
 
 	switchTimer(newTime: number, newType: 'Session' | 'Break') {
 		this.setState({ timer: newTime, timerType: newType, alarmColor: { color: 'white' } });
-
 		if (newType === 'Break') {
 			this.audioBeep?.play();
 		}
@@ -158,10 +157,10 @@ class App extends React.Component<{}, AppState> {
 	clockify() {
 		if (this.state.timer < 0) return '00:00';
 		const minutes = Math.floor(this.state.timer / 60);
-		let seconds = this.state.timer - 60 * minutes;
-		seconds = seconds < 10 ? '0' + seconds : seconds;
+		const seconds = this.state.timer % 60;
 		const displayMinutes = minutes < 10 ? '0' + minutes : minutes;
-		return displayMinutes + ':' + seconds;
+		const displaySeconds = seconds < 10 ? '0' + seconds : seconds;
+		return `${displayMinutes}:${displaySeconds}`;
 	}
 
 	reset() {
@@ -171,11 +170,11 @@ class App extends React.Component<{}, AppState> {
 			timerState: 'stopped',
 			timerType: 'Session',
 			timer: 1500,
-			intervalID: '',
+			intervalID: undefined,
 			alarmColor: { color: 'white' },
 		});
 
-		clearInterval(this.state.intervalID as NodeJS.Timeout);
+		clearInterval(this.state.intervalID as NodeJS.Timeout | number | undefined);
 
 		if (this.audioBeep) {
 			this.audioBeep.pause();
